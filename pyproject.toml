@@ -1,0 +1,14 @@
+[project]
+name = "floorplan"
+version = "0.1.0"
+description = "PDF-планировка квартиры → модель → мебель → объёмы → Excel"
+requires-python = ">=3.10"
+dependencies = [
+    "pymupdf",
+    "shapely>=2.0",
+    "openpyxl",
+    "matplotlib",
+    "numpy",
+    "trimesh",
+    "mapbox-earcut",
+]

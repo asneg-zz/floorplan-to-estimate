@@ -1,0 +1,21 @@
+{
+  "_comment": "Примерные цены, руб. за единицу. Это ориентиры для демонстрации расчёта, а не прайс подрядчика — замените своими.",
+  "floor_laminate_work": 650,
+  "floor_laminate_material": 1600,
+  "floor_tile_work": 1900,
+  "floor_tile_material": 2000,
+  "plinth_work": 250,
+  "plinth_material": 350,
+  "wall_plaster_work": 750,
+  "wall_paint_work": 600,
+  "wall_paint_material": 250,
+  "wall_tile_work": 2100,
+  "wall_tile_material": 1900,
+  "ceiling_work": 700,
+  "ceiling_material": 400,
+  "door_interior_work": 6000,
+  "door_interior_material": 25000,
+  "door_entrance_work": 9000,
+  "door_entrance_material": 60000,
+  "window_per_m2": 16000
+}
