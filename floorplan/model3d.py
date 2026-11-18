@@ -13,7 +13,9 @@ import json
 from typing import Any
 
 from shapely.geometry import Polygon, box
-from shapely.ops import unary_union
+from shapely.ops import polylabel, unary_union
+
+from .lighting import circle
 
 FLOOR_COLORS = {"плитка": "#b9c4cc", "ламинат": "#c9a36b"}
 # Цвет мебели по виду предмета: ищется первое совпадение начала названия.
@@ -59,7 +61,7 @@ def _thin(poly: Polygon, thickness: float, to: float = 40.0) -> Polygon:
     return shrunk if not shrunk.is_empty else poly
 
 
-def build_solids(plan: dict[str, Any], furniture: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_solids(plan: dict[str, Any], furniture: list[dict[str, Any]], lights: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     g = plan["_geom"]
     d = plan["defaults"]
     top = max(r["height"] for r in plan["rooms"])  # отметка низа перекрытия
@@ -100,14 +102,41 @@ def build_solids(plan: dict[str, Any], furniture: list[dict[str, Any]]) -> list[
     add("Ограждение балкона (парапет)", "стена", g["thin"], 0.0, 1100.0, "#b0b0b0")
     add("Остекление балкона", "окно", g["thin"], 1100.0, d["ceiling_height"], "#9fd3f0")
 
+    for r in plan["rooms"]:
+        add(f"Потолок — {r['name']}", "потолок", r["_geom"], r["height"], r["height"] + 20.0, "#ffffff")
+    for lt in lights or []:
+        x, y, z = lt["x"], lt["y"], lt["z"]
+        if lt["kind"] == "chandelier":
+            add(f"{lt['id']} Люстра (подвес)", "свет", Polygon(circle(x, y, 20, 8)), z - 350.0, z, "#555555")
+            add(f"{lt['id']} Люстра", "свет", Polygon(circle(x, y, 280)), z - 520.0, z - 350.0, "#ffe9a8")
+        else:
+            add(f"{lt['id']} Светильник потолочный", "свет", Polygon(circle(x, y, 170)), z - 70.0, z, "#ffe9a8")
+
     for f in furniture:
         solids.append({"name": f"{f['id']} {f['name']}", "group": "мебель", "geom": f["_geom"].simplify(0.5), "z0": f["z0"], "z1": f["z0"] + f["h"], "color": furniture_color(f["name"])})
     return solids
 
 
-def write_model_json(solids: list[dict[str, Any]], path: str) -> int:
-    """Список призм для сборки сцены в Blender (tools/blender_build.py)."""
-    doc = [
+def room_labels(plan: dict[str, Any], furniture: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Подпись помещения на полу — в самом свободном от мебели месте."""
+    out = []
+    for r in plan["rooms"]:
+        items = [f["_geom"].buffer(60) for f in furniture if f["room"] == r["number"] and f["z0"] < 1000]
+        free = r["_geom"].difference(unary_union(items)) if items else r["_geom"]
+        parts = [free] if free.geom_type == "Polygon" else [g for g in getattr(free, "geoms", []) if g.geom_type == "Polygon"]
+        best = max(parts, key=lambda p: p.area)
+        pt = polylabel(best, tolerance=50)
+        out.append({
+            "text": f"{r['name']}\n{r['area']:.2f} м²".replace(".", ","),
+            "x": round(pt.x), "y": round(pt.y),
+            "radius": round(best.exterior.distance(pt)),  # сколько свободного места вокруг точки
+        })
+    return out
+
+
+def write_model_json(solids: list[dict[str, Any]], path: str, labels=None, lights=None) -> int:
+    """Данные для сборки сцены в Blender (tools/blender_build.py)."""
+    prisms = [
         {
             "name": s["name"],
             "group": s["group"],
@@ -118,9 +147,12 @@ def write_model_json(solids: list[dict[str, Any]], path: str) -> int:
         }
         for s in solids
     ]
+    doc = {"solids": prisms, "room_labels": labels or [], "lights": [
+        {k: lt[k] for k in ("id", "name", "kind", "x", "y", "z", "power")} for lt in lights or []
+    ]}
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, ensure_ascii=False)
-    return len(doc)
+    return len(prisms)
 
 
 def write_glb(solids: list[dict[str, Any]], path: str) -> None:
@@ -132,7 +164,7 @@ def write_glb(solids: list[dict[str, Any]], path: str) -> None:
         mesh = trimesh.creation.extrude_polygon(s["geom"], s["z1"] - s["z0"])
         mesh.apply_translation((0, 0, s["z0"]))
         rgb = [int(s["color"][i : i + 2], 16) for i in (1, 3, 5)]
-        alpha = 30 if s["group"] == "окно" else 255
+        alpha = {"окно": 30, "потолок": 20}.get(s["group"], 255)
         mesh.visual = trimesh.visual.TextureVisuals(
             material=trimesh.visual.material.PBRMaterial(
                 baseColorFactor=[*rgb, alpha], alphaMode="BLEND" if alpha < 255 else "OPAQUE", roughnessFactor=0.9, metallicFactor=0.0

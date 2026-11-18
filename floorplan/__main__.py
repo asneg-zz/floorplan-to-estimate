@@ -17,7 +17,8 @@ from .analyze import analyze, strip_private
 from .estimate import build_estimate, estimate_total
 from .excel import write_excel
 from .furniture import furnish, validate
-from .model3d import build_solids, write_glb, write_model_json
+from .lighting import place_lights
+from .model3d import build_solids, room_labels, write_glb, write_model_json
 from .quantities import assign_coverings, compute
 from .read_pdf import read_pdf
 from .render import render_plan
@@ -42,20 +43,30 @@ def main() -> None:
     assign_coverings(plan)
     furniture, skipped = furnish(plan, raw)
     problems = validate(plan, furniture)
-    solids = build_solids(plan, furniture)
-    q = compute(plan, furniture)
+    lights = place_lights(plan)
+    solids = build_solids(plan, furniture, lights)
+    q = compute(plan, furniture, lights)
 
     doc = strip_private(plan)
     doc["furniture"] = strip_private(furniture)
     (out / "plan.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
     render_plan(plan, str(out / "plan_check.png"), furniture)
-    n = write_model_json(solids, str(out / "model.json"))
+    n = write_model_json(solids, str(out / "model.json"), room_labels(plan, furniture), lights)
     write_glb(solids, str(out / f"{args.name}.glb"))
     estimate = None
     if args.prices:
         prices = json.loads(Path(args.prices).read_text(encoding="utf-8"))
         estimate = build_estimate(plan, q, prices)
     write_excel(str(out / "volumes.xlsx"), plan, q, furniture, problems, skipped, estimate)
+
+    try:
+        from .ifc_export import write_ifc
+
+        counts = write_ifc(solids, plan, q, furniture, str(out / f"{args.name}.ifc"), args.name)
+        ifc_note = ", ".join(f"{k[3:]} {v}" for k, v in sorted(counts.items()))
+    except ImportError:
+        ifc_note = "пропущен: не установлен ifcopenshell"
+    print(f"IFC: {ifc_note}")
 
     blend_note = "не собирался"
     if args.blender:
@@ -84,6 +95,7 @@ def main() -> None:
     print(f"помещений {len(plan['rooms'])}, дверей {len(plan['doors'])}, окон {len(plan['windows'])}, тел в модели {n}")
     for c in plan["checks"]:
         print(f"  {c['number']}. {c['name']:<16} {c['area']:>6.2f} м²  на чертеже {c['printed']:>6.2f}  {c['deviation_pct']:+.2f} %  {'ok' if c['ok'] else 'ВНЕ ДОПУСКА'}")
+    print(f"светильников {len(lights)}")
     print(f"мебели {len(furniture)}; не поместилось: {', '.join(skipped) or '—'}")
     if estimate:
         print(f"смета по примерным ценам: {estimate_total(estimate):,.0f} ₽".replace(",", " "))

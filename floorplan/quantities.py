@@ -23,7 +23,8 @@ def _strip_length(poly) -> tuple[float, float]:
     return (a / t if t > 0 else 0.0, t)
 
 
-def compute(plan: dict[str, Any], furniture: list[dict[str, Any]]) -> dict[str, Any]:
+def compute(plan: dict[str, Any], furniture: list[dict[str, Any]], lights: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    lights = lights or []
     rows: list[Row] = []
     per_room: list[dict[str, Any]] = []
     for r in plan["rooms"]:
@@ -63,6 +64,8 @@ def compute(plan: dict[str, Any], furniture: list[dict[str, Any]]) -> dict[str, 
             (name, "Объём помещения", "м³", area * h, ""),
             (name, "Количество дверей", "шт", len(doors), ", ".join(d["id"] for d in doors)),
             (name, "Количество окон", "шт", len(windows), ", ".join(w["id"] for w in windows)),
+            (name, "Количество светильников", "шт", sum(1 for lt in lights if lt["room"] == n),
+             ", ".join(f"{lt['id']} {lt['name'].lower()}" for lt in lights if lt["room"] == n)),
         ]
 
     top = max(r["height"] for r in plan["rooms"]) / 1000
@@ -85,5 +88,6 @@ def compute(plan: dict[str, Any], furniture: list[dict[str, Any]]) -> dict[str, 
     total.append(("Квартира", "Перегородки: площадь (одна сторона)", "м²", plen * top, f"высота до перекрытия {top:.3f} м"))
     total.append(("Квартира", "Перегородки: объём", "м³", g["partition"].area / 1e6 * top, ""))
     total.append(("Квартира", "Несущие стены: площадь в плане", "м²", g["bearing"].area / 1e6, ""))
+    total.append(("Квартира", "Количество светильников", "шт", len(lights), "один на ~18 м² помещения"))
     total.append(("Квартира", "Предметов мебели", "шт", len(furniture), ""))
     return {"rows": rows + total, "per_room": per_room}

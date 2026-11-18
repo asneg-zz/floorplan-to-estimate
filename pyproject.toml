@@ -11,4 +11,5 @@ dependencies = [
     "numpy",
     "trimesh",
     "mapbox-earcut",
+    "ifcopenshell",
 ]
